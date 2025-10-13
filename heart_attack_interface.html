@@ -1,0 +1,297 @@
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Heart Attack Risk Prediction</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: #2c3e50;
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.8;
+            font-size: 16px;
+        }
+
+        .form-container {
+            padding: 40px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+
+        .submit-btn {
+            width: 100%;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.3s;
+        }
+
+        .submit-btn:hover {
+            background: #c0392b;
+        }
+
+        .submit-btn:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+        }
+
+        .result {
+            margin-top: 30px;
+            padding: 20px;
+            border-radius: 8px;
+            display: none;
+        }
+
+        .risk-high {
+            background: #ffebee;
+            border: 2px solid #e74c3c;
+            color: #c0392b;
+        }
+
+        .risk-low {
+            background: #e8f5e8;
+            border: 2px solid #27ae60;
+            color: #229954;
+        }
+
+        .risk-error {
+            background: #fef9e7;
+            border: 2px solid #f39c12;
+            color: #d35400;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .spinner {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1> Heart Attack Risk Assessment</h1>
+            <p>Predict the risk of heart attack based on health parameters</p>
+        </div>
+
+        <div class="form-container">
+            <form id="predictionForm">
+                <div class="form-group">
+                    <label for="systolic_blood_pressure">Systolic Blood Pressure (mm Hg):</label>
+                    <input type="number" id="systolic_blood_pressure" 
+                           min="50" max="250" step="1" 
+                           placeholder="Enter systolic pressure (e.g., 120)" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="blood_sugar">Blood Sugar Level (mg/dL):</label>
+                    <input type="number" id="blood_sugar" 
+                           min="50" max="300" step="1" 
+                           placeholder="Enter blood sugar level (e.g., 100)" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="age">Age:</label>
+                    <input type="number" id="age" 
+                           min="18" max="120" step="1" 
+                           placeholder="Enter your age" required>
+                </div>
+
+                <button type="submit" class="submit-btn" id="submitBtn">
+                    Predict Heart Attack Risk
+                </button>
+            </form>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Analyzing your health data...</p>
+            </div>
+
+            <div class="result" id="result">
+                <h3 id="resultTitle">Prediction Result</h3>
+                <p id="resultMessage"></p>
+                <div id="resultDetails"></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('predictionForm');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        const resultTitle = document.getElementById('resultTitle');
+        const resultMessage = document.getElementById('resultMessage');
+        const resultDetails = document.getElementById('resultDetails');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // Ваш FastAPI endpoint
+        const API_URL = 'http://localhost:8000/predict';
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            // Показать загрузку
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            submitBtn.disabled = true;
+
+            // Собрать данные формы
+            const formData = {
+                systolic_blood_pressure: parseFloat(document.getElementById('systolic_blood_pressure').value),
+                blood_sugar: parseFloat(document.getElementById('blood_sugar').value),
+                age: parseInt(document.getElementById('age').value)
+            };
+
+            try {
+                // Отправить запрос к API
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+
+                const data = await response.json();
+
+                // Обработать результат
+                displayResult(data);
+
+            } catch (error) {
+                console.error('Error:', error);
+                displayError('Connection error. Please make sure the server is running.');
+            } finally {
+                // Скрыть загрузку
+                loading.style.display = 'none';
+                submitBtn.disabled = false;
+            }
+        });
+
+        function displayResult(data) {
+            result.style.display = 'block';
+
+            // Очистить предыдущие классы
+            result.className = 'result';
+
+            if (data.prediction === -1) {
+                // Ошибка
+                result.classList.add('risk-error');
+                resultTitle.textContent = ' Error';
+                resultMessage.textContent = data.message;
+                resultDetails.innerHTML = '';
+            } else if (data.prediction === 1) {
+                // Высокий риск
+                result.classList.add('risk-high');
+                resultTitle.textContent = ' High Risk Detected';
+                resultMessage.textContent = data.message;
+                resultDetails.innerHTML = `
+                    <p><strong>Risk Level:</strong> ${data.risk_level}</p>
+                    <p><strong>Recommendation:</strong> Please consult with a healthcare professional immediately.</p>
+                `;
+            } else {
+                // Низкий риск
+                result.classList.add('risk-low');
+                resultTitle.textContent = ' Low Risk';
+                resultMessage.textContent = data.message;
+                resultDetails.innerHTML = `
+                    <p><strong>Risk Level:</strong> ${data.risk_level}</p>
+                    <p><strong>Recommendation:</strong> Continue maintaining a healthy lifestyle.</p>
+                `;
+            }
+        }
+
+        function displayError(message) {
+            result.style.display = 'block';
+            result.className = 'result risk-error';
+            resultTitle.textContent = ' Connection Error';
+            resultMessage.textContent = message;
+            resultDetails.innerHTML = '';
+        }
+
+        // Добавить валидацию в реальном времени
+        const inputs = form.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.addEventListener('input', () => {
+                if (form.checkValidity()) {
+                    submitBtn.disabled = false;
+                }
+            });
+        });
+    </script>
+</body>
+</html>
