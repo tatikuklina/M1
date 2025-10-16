@@ -12,26 +12,27 @@ app = FastAPI(title="Heart Attack Prediction API")
 class PatientData(BaseModel):
     systolic_blood_pressure: float
     blood_sugar: float
-    age: int
+    age: float
 
 class PredictionResult(BaseModel):
     prediction: int
     risk_level: str
     message: str
 
-# Загрузка модели
+# Загрузка pipeline
 try:
     full_pipeline = joblib.load('my_trained_pipeline.pkl')
-    trained_model3 = full_pipeline.named_steps['models']
-    print(" Модель успешно загружена")
+    print("Pipeline успешно загружен")
+    print(f"Тип pipeline: {type(full_pipeline)}")
+    print(f"Шаги pipeline: {list(full_pipeline.named_steps.keys())}")
 except Exception as e:
-    print(f" Ошибка загрузки модели: {e}")
-    trained_model3 = None
+    print(f"Ошибка загрузки pipeline: {e}")
+    full_pipeline = None
 
 html_interface = """<!DOCTYPE html>
 <html>
 <head>
-    <title>Heart Attack Prediction</title>
+    <title>Предсказание риска сердечного приступа</title>
     <style>
         body { font-family: Arial; max-width: 500px; margin: 50px auto; padding: 20px; }
         .form-group { margin: 15px 0; }
@@ -41,24 +42,25 @@ html_interface = """<!DOCTYPE html>
         .result { margin: 20px 0; padding: 15px; border-radius: 5px; }
         .high-risk { background: #ffcccc; border: 1px solid #ff0000; }
         .low-risk { background: #ccffcc; border: 1px solid #00ff00; }
+        .error { background: #ffe6cc; border: 1px solid #ff9900; }
     </style>
 </head>
 <body>
-    <h2>Heart Attack Risk Prediction</h2>
+    <h2>Предсказание риска сердечного приступа</h2>
     <form onsubmit="predictRisk(event)">
         <div class="form-group">
-            <label>Blood Pressure:</label>
-            <input type="number" id="bp" placeholder="Systolic BP" required>
+            <label>Систолическое артериальное давление:</label>
+            <input type="number" id="bp" placeholder="например, 0.46" required step="0.01">
         </div>
         <div class="form-group">
-            <label>Blood Sugar:</label>
-            <input type="number" id="sugar" placeholder="Blood Sugar" required>
+            <label>Содержание сахара в крови:</label>
+            <input type="number" id="sugar" placeholder="например, 0.10" required step="0.01">
         </div>
         <div class="form-group">
-            <label>Age:</label>
-            <input type="number" id="age" placeholder="Age" required>
+            <label>Возраст:</label>
+            <input type="number" id="age" placeholder="например, 0.46" required step="0.01">
         </div>
-        <button type="submit">Check Risk</button>
+        <button type="submit">Проверка риска</button>
     </form>
     <div id="result"></div>
 
@@ -83,37 +85,58 @@ html_interface = """<!DOCTYPE html>
                 displayResult(result);
             } catch (error) {
                 document.getElementById('result').innerHTML = 
-                    '<div class="result" style="background:#ffcccc">Error: ' + error + '</div>';
+                    '<div class="result error">Error: ' + error + '</div>';
             }
         }
 
         function displayResult(data) {
             const resultDiv = document.getElementById('result');
-            if (data.prediction === 1) {
+            if (data.prediction === -1) {
+                resultDiv.innerHTML = '<div class="result error">' +
+                    '<h3>Error</h3><p>' + data.message + '</p></div>';
+            } else if (data.prediction === 1) {
                 resultDiv.innerHTML = '<div class="result high-risk">' +
-                    '<h3> High Risk</h3><p>' + data.message + '</p></div>';
+                    '<h3>Высокий риск</h3><p>' + data.message + '</p></div>';
             } else {
                 resultDiv.innerHTML = '<div class="result low-risk">' +
-                    '<h3> Low Risk</h3><p>' + data.message + '</p></div>';
+                    '<h3>Низкий риск</h3><p>' + data.message + '</p></div>';
             }
         }
     </script>
 </body>
 </html>"""
 
+
+
 @app.get("/", response_class=HTMLResponse)
 async def main_page():
     return html_interface
 
+@app.get("/model-info")
+async def model_info():
+    """Информация о загруженном pipeline"""
+    if full_pipeline is not None:
+        return {
+            "pipeline_type": type(full_pipeline).__name__,
+            "pipeline_steps": list(full_pipeline.named_steps.keys()),
+            "features": ['systolic_blood_pressure', 'blood_sugar', 'age']
+        }
+    else:
+        return {"error": "Pipeline не загружен"}
+
 @app.post("/predict", response_model=PredictionResult)
 async def predict_heart_attack(patient_data: PatientData):
-    if trained_model3 is None:
+    """
+    Предсказание риска сердечного приступа с использованием вашего pipeline
+    """
+    if full_pipeline is None:
         return PredictionResult(
             prediction=-1,
             risk_level="Ошибка",
-            message="Модель не загружена"
+            message="Pipeline не загружен"
         )
 
+    # Создаю DataFrame с теми же признаками, что и при обучении
     input_data = pd.DataFrame({
         'systolic_blood_pressure': [patient_data.systolic_blood_pressure],
         'blood_sugar': [patient_data.blood_sugar],
@@ -121,10 +144,11 @@ async def predict_heart_attack(patient_data: PatientData):
     })
 
     try:
-        prediction = trained_model3.predict(input_data)[0]
+        # Использую ВЕСЬ pipeline для предсказания
+        prediction = full_pipeline.predict(input_data) #!!!!!!prediction = full_pipeline.predict(input_data)[0]
 
         risk_level = "Высокий риск" if prediction == 1 else "Низкий риск"
-        message = "Рекомендуется обратиться к врачу" if prediction == 1 else "Риск сердечного приступа низкий"
+        message = "Рекомендуется провести детальное исследование здоровья" if prediction == 1 else "Риск сердечного приступа низкий"
 
         return PredictionResult(
             prediction=int(prediction),
